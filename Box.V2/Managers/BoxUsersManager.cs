@@ -15,8 +15,8 @@ namespace Box.V2.Managers
     /// </summary>
     public class BoxUsersManager : BoxResourceManager
     {
-        public BoxUsersManager(IBoxConfig config, IBoxService service, IBoxConverter converter, IAuthRepository auth)
-            : base(config, service, converter, auth) { }
+        public BoxUsersManager(IBoxConfig config, IBoxService service, IBoxConverter converter, IAuthRepository auth, string asUser = null)
+            : base(config, service, converter, auth, asUser) { }
 
         /// <summary>
         /// Retrieves information about the user who is currently logged in i.e. the user for whom this auth token was generated.
@@ -26,6 +26,22 @@ namespace Box.V2.Managers
         {
             BoxRequest request = new BoxRequest(_config.UserEndpointUri, "me")
                 .Param(ParamFields, fields);
+
+            IBoxResponse<BoxUser> response = await ToResponseAsync<BoxUser>(request).ConfigureAwait(false);
+
+            return response.ResponseObject;
+        }
+
+        /// <summary>
+        /// Create a new Box Enterprise user.
+        /// </summary>
+        /// <returns></returns>
+        public async Task<BoxUser> CreateEnterpriseUserAsync(BoxUserRequest userRequest, List<string> fields = null)
+        {
+            BoxRequest request = new BoxRequest(_config.UserEndpointUri, userRequest.Id)
+                .Param(ParamFields, fields)
+                .Payload(_converter.Serialize(userRequest))
+                .Method(RequestMethod.Post);
 
             IBoxResponse<BoxUser> response = await ToResponseAsync<BoxUser>(request).ConfigureAwait(false);
 
@@ -43,7 +59,8 @@ namespace Box.V2.Managers
         {
             BoxRequest request = new BoxRequest(_config.UserEndpointUri, userRequest.Id)
                 .Param(ParamFields, fields)
-                .Payload(_converter.Serialize(userRequest));
+                .Payload(_converter.Serialize(userRequest))
+                .Method(RequestMethod.Put);
 
             IBoxResponse<BoxUser> response = await ToResponseAsync<BoxUser>(request).ConfigureAwait(false);
 
@@ -71,6 +88,25 @@ namespace Box.V2.Managers
                 .Param(ParamFields, fields);
 
             IBoxResponse<BoxCollection<BoxUser>> response = await ToResponseAsync<BoxCollection<BoxUser>>(request).ConfigureAwait(false);
+
+            return response.ResponseObject;
+        }
+
+        /// <summary>
+        /// Deletes an enterprise user
+        /// </summary>
+        /// <param name="userId"></param>
+        /// <param name="notify">Determines if the destination user should receive email notification of the transfer.</param>
+        /// <param name="force">Whether or not the user should be deleted even if this user still own files.</param>
+        /// <returns></returns>
+        public async Task<BoxUser> DeleteEnterpriseUserAsync(string userId, bool notify, bool force)
+        {
+            BoxRequest request = new BoxRequest(_config.UserEndpointUri, userId)
+                .Param("notify", notify.ToString())
+                .Param("force", force.ToString())
+                .Method(RequestMethod.Delete);
+
+            IBoxResponse<BoxUser> response = await ToResponseAsync<BoxUser>(request).ConfigureAwait(false);
 
             return response.ResponseObject;
         }

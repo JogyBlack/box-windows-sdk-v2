@@ -3,28 +3,72 @@
 Box Windows V2 SDK
 ==================
 
-Windows SDK for v2 of the Box API. The SDK is built upon the Portable Class Library and targets the following frameworks: .NET for Windows Store apps, .NET Framework 4.0, Silverlight 4 and higher, Windows Phone 7.5 and higher.
-
+Windows .NET SDK for V2 of the Box API that is usable from the following frameworks: 
+* .NET Framework 4.0.3 and higher
+* .NET for Windows Store apps
+* Silverlight 4 and higher
+* Windows Phone 7.5 and higher
 
 ###Prerequisites
-* Git  
-* Visual Studio 2012 w/ Update 2 CTP  
+* Visual Studio 2012 w/ Update 2 CTP (or higher)
 * Windows Phone SDK 8.0 (if running Windows Phone samples)
 * Windows Store SDK (if running Windows Store samples)
 
 Quick Start
 -----------
 
-### Configuration
+### Installation
+Install the core SDK using Nuget
+```bash
+PM> Install-Package Box.V2
+```
+For use with Box Platform Developer or Box Platform Enterprise, also install JWT support using Nuget
+```bash
+PM> Install-Package Box.V2.JWTAuth
+```
 
+If you haven't already created an app in Box go to https://developers.box.com/ and click 'Sign Up'
+
+### Using with Box Platform Developer or Box Platform Enterprise
+
+#### Configure
+```c#
+var boxConfig = new BoxConfig(<Client_Id>, <Client_Secret>, <Enterprise_Id>, <Private_Key>, <JWT_Private_Key_Password>, <JWT_Public_Key_id>);
+var boxJWT = new BoxJWTAuth(boxConfig);
+```
+
+#### Authenticate
+```c#
+var adminToken = boxJWT.AdminToken(); //valid for 60 minutes so should be cached and re-used
+var adminClient = boxJWT.AdminClient(adminToken);
+
+//for example, get the admin's root folder items
+var items = await adminClient.FoldersManager.GetFolderItemsAsync("0", 500);
+```
+#### Create an App User
+```c#
+//NOTE: you must set IsPlatformAccessOnly=true for an App User
+var userRequest = new BoxUserRequest() { Name = "test appuser", IsPlatformAccessOnly = true };
+var appUser = await adminClient.UsersManager.CreateEnterpriseUserAsync(userRequest);
+
+//get a user client
+var userToken = boxJWT.UserToken(appUser.Id); //valid for 60 minutes so should be cached and re-used
+var userClient = boxJWT.UserClient(userToken, appUser.Id);
+
+//for example, look up the app user's details
+var userDetails = await userClient.UsersManager.GetCurrentUserInformationAsync();
+```
+
+### Using with OAuth2
+
+#### Configure
 Set your configuration parameters and initialize the client:
 ```c#
-var config = new BoxConfig(<Client_Id>, <Client_Secret>, "https://boxsdk");
+var config = new BoxConfig(<Client_Id>, <Client_Secret>, <Redirect_Uri>);
 var client = new BoxClient(config);
 ```
-If you dont' have a client id or client secret, you can get one here: https://app.box.com/developers/services
 
-### Authenticate
+#### Authenticate
 Bundled with the SDK are sample applications for both Windows 8 and Windows Phone which include sample OAuth2 Workflows. The authentication workflow is a 2-step process that first retrieves an Auth Code and then exchanges it for an Access/Refresh Token
 
 *Windows 8*
@@ -46,33 +90,27 @@ oAuth2Sample.AuthCodeReceived += async (s, e) =>
 oauth.GetAuthCode(config.AuthCodeUri, config.RedirectUri);
 ```
 
-Alternatively, a completely custom OAuth2 authentication process can be used in place of the provided workflows. In this scenario, a fully formed OAuthSession object will be passed in when instantiating the BoxClient.
+*Other (ASP.NET)*
+
+Alternatively, a completely custom OAuth2 authentication process can be used in place of the provided workflows, for example, in a custom web application. In this scenario, a fully formed OAuthSession object should be passed in when instantiating the BoxClient. 
 
 ```c#
 OAuthSession session = // Create session from custom implementation
 var client = new BoxClient(config, session);
 ```
-
-### Get Folder Items
+### Some Examples
+#### Get Folder Items
 ```c#
 // Get root folder with default properties
-BoxFolder f = await client.FoldersManager.GetItemsAsync("0", 50, 0);
-
-// Get root folder with specific properties
-BoxFolder f = await client.FoldersManager.GetItemsAsync("0", 50, 0, new List<string>() { 
-  BoxFolder.FieldModifiedAt,
-        BoxItem.FieldName, 
-	BoxFolder.FieldItemCollection, 
-        BoxFolder.FieldPathCollection
-});
+var items = await client.FoldersManager.GetFolderItemsAsync("0", 500);
 ```
 
-### Get File Information
+#### Get File Information
 ```c#
 BoxFile f = await client.FilesManager.GetInformationAsync(fileId);
 ```
 
-### Update a Files Information
+#### Update a Files Information
 ```c#
 // Create request object with new property values
 BoxFileRequest request = new BoxFileRequest()
@@ -85,7 +123,7 @@ BoxFile f = await client.FilesManager.UpdateInformationAsync(request );
 ```
 
 
-### Upload a New File
+#### Upload a New File
 ```c#
 // Create request object with name and parent folder the file should be uploaded to
 BoxFileRequest req = new BoxFileRequest()
@@ -96,9 +134,47 @@ BoxFileRequest req = new BoxFileRequest()
 BoxFile f = await client.FilesManager.UploadAsync(request, stream);
 ```
 
-### Download a File
+#### Download a File
 ```c#
 Stream stream = await client.FilesManager.DownloadStreamAsync(fileId);
+```
+
+#### Get Temporary Download Uri for a file
+This method will retrieve a temporary (15 minute) Uri for a file that can be used, for example, to send as a redirect to a browser, causing the browser to download the file directly from Box.
+```c#
+var downloadUri = await client.FilesManager.GetDownloadUriAsync(fileId);
+```
+
+#### Search using Metadata
+```c#
+var filter = new 
+{ 
+	someKey = "blah", 
+	expiresOn = new {gt = new DateTime(2015,1,1), lt = new DateTime(2015, 9, 1)}
+};
+
+var mdFilter = new BoxMetadataFilterRequest() 
+{ 
+	TemplateKey = "yourTemplate", 
+	Scope = "enterprise", 
+	Filters = filter 
+};
+
+//currently only one BoxMetadataFilterRequest element is supported; in the future multiple will be supported (hence the List)
+var results = await client.SearchManager.SearchAsync(mdFilters: new List<BoxMetadataFilterRequest>() { mdFilter });
+```
+
+#### Make API calls with As-User
+If you have an admin token with appropriate permissions, you can make API calls in the context of a managed user. In order to do this you must request Box.com to activate As-User functionality for your API key (see developer site for instructions). 
+```c#
+var config = new BoxConfig(<Client_Id>, <Client_Secret>, <Redirect_Uri);
+var auth = new OAuthSession(<Your_Access_Token>, <Your_Refresh_Token>, 3600, "bearer");
+
+var userId = "12345678"
+var userClient = new BoxClient(config, auth, asUser: userId);
+
+//returns root folder items for the user with ID '12345678'
+var items  = await userClient.FoldersManager.GetFolderItemsAsync("0", 500);
 ```
 
 File/Folder Picker
@@ -124,6 +200,12 @@ Unit tests are included that use Moq to simulate network requests and responses.
 Documentation
 -------------
 Documentation of all classes and methods are provided through the standard ```<summary></summary>``` xml tags. The easiest way to view these is through Visual Studio's built in "Object Browser" (VIEW -> Object Browser, or CTRL+W, J). 
+
+Other Resources
+-------------
+- Core SDK Nuget Package: https://www.nuget.org/packages/Box.V2/
+- JWT Support Nuget Package: https://www.nuget.org/packages/Box.V2.JWTAuth/
+- Box Windows SDK Video Tutorial: https://developers.box.com/box-windows-sdk-tutorial/
 
 Known Issues
 ------------

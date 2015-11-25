@@ -19,8 +19,7 @@ namespace Box.V2.Models
     /// Box representation of a collection
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class BoxCollection<T> : BoxCollection 
-        where T : class, new()
+    public class BoxCollection<T> : BoxCollection where T : class, new()
     {
         [JsonProperty(PropertyName = FieldTotalCount)]
         public int TotalCount { get; private set; }
@@ -36,6 +35,25 @@ namespace Box.V2.Models
 
         [JsonProperty(PropertyName = FieldOrder)]
         public List<BoxSortOrder> Order { get; private set; }
+
+    }
+
+    public class BoxCollectionSingleSortOrder<T> : BoxCollection where T : class, new()
+    {
+        [JsonProperty(PropertyName = FieldTotalCount)]
+        public int TotalCount { get; private set; }
+
+        [JsonProperty(PropertyName = FieldEntries)]
+        public List<T> Entries { get; private set; }
+
+        [JsonProperty(PropertyName = FieldOffset)]
+        public int Offset { get; private set; }
+
+        [JsonProperty(PropertyName = FieldLimit)]
+        public int Limit { get; private set; }
+
+        [JsonProperty(PropertyName = FieldOrder)]
+        public BoxSortOrder Order { get; private set; }
 
     }
 }

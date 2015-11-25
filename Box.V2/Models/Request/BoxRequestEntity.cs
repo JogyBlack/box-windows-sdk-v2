@@ -37,4 +37,9 @@ public enum BoxType
     discussion, 
     comment,
     folder,
+    retention_policy,
+    enterprise,
+    user,
+    group,
+    web_link
 }

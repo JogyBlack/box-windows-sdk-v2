@@ -22,8 +22,8 @@ namespace Box.V2.Managers
     /// </summary>
     public class BoxFilesManager : BoxResourceManager
     {
-        public BoxFilesManager(IBoxConfig config, IBoxService service, IBoxConverter converter, IAuthRepository auth)
-            : base(config, service, converter, auth) { }
+        public BoxFilesManager(IBoxConfig config, IBoxService service, IBoxConverter converter, IAuthRepository auth, string asUser = null)
+            : base(config, service, converter, auth, asUser) { }
 
         /// <summary>
         /// Gets a file object representation of the provided file Id
@@ -49,17 +49,38 @@ namespace Box.V2.Managers
         /// Returns the stream of the requested file
         /// </summary>
         /// <param name="id">Id of the file to download</param>
+        /// <param name="versionId"></param>
+        /// <param name="timeout"></param>
         /// <returns>MemoryStream of the requested file</returns>
-        public async Task<Stream> DownloadStreamAsync(string id, string versionId = null)
+        public async Task<Stream> DownloadStreamAsync(string id, string versionId = null, TimeSpan? timeout = null)
         {
             id.ThrowIfNullOrWhiteSpace("id");
 
-            BoxRequest request = new BoxRequest(_config.FilesEndpointUri, string.Format(Constants.ContentPathString, id))
+            BoxRequest request = new BoxRequest(_config.FilesEndpointUri, string.Format(Constants.ContentPathString, id)) { Timeout = timeout }
                 .Param("version", versionId);
 
             IBoxResponse<Stream> response = await ToResponseAsync<Stream>(request).ConfigureAwait(false);
 
             return response.ResponseObject;
+        }
+
+        /// <summary>
+        /// Retrieves the temporary direct Uri to a file (valid for 15 minutes). This is typically used to send as a redirect to a browser to make the browser download the file directly from Box.
+        /// </summary>
+        /// <param name="id">Id of the file</param>
+        /// <param name="versionId">Version of the file</param>
+        /// <returns></returns>
+        public async Task<Uri> GetDownloadUriAsync(string id, string versionId = null)
+        {
+            id.ThrowIfNullOrWhiteSpace("id");
+
+            BoxRequest request = new BoxRequest(_config.FilesEndpointUri, string.Format(Constants.ContentPathString, id)) { FollowRedirect = false }
+                .Param("version", versionId);
+
+            IBoxResponse<BoxFile> response = await ToResponseAsync<BoxFile>(request).ConfigureAwait(false);
+            var locationUri = response.Headers.Location;
+
+            return locationUri;
         }
 
         /// <summary>
@@ -69,6 +90,7 @@ namespace Box.V2.Managers
         /// </summary>
         /// <param name="fileRequest"></param>
         /// <param name="stream"></param>
+        /// <param name="fields"></param>
         /// <param name="timeout"></param>
         /// <returns></returns>
         public async Task<BoxFile> UploadAsync(BoxFileRequest fileRequest, Stream stream, List<string> fields = null, TimeSpan? timeout = null)
@@ -225,13 +247,30 @@ namespace Box.V2.Managers
         public async Task<BoxFile> CreateSharedLinkAsync(string id, BoxSharedLinkRequest sharedLinkRequest, List<string> fields = null)
         {
             id.ThrowIfNullOrWhiteSpace("id");
-            if (!sharedLinkRequest.ThrowIfNull("sharedLinkRequest").Access.HasValue)
-                throw new ArgumentNullException("sharedLink.Access");
+            sharedLinkRequest.ThrowIfNull("sharedLinkRequest");
 
             BoxRequest request = new BoxRequest(_config.FilesEndpointUri, id)
                 .Method(RequestMethod.Put)
                 .Param(ParamFields, fields)
                 .Payload(_converter.Serialize(new BoxItemRequest() { SharedLink = sharedLinkRequest }));
+
+            IBoxResponse<BoxFile> response = await ToResponseAsync<BoxFile>(request).ConfigureAwait(false);
+
+            return response.ResponseObject;
+        }
+
+        /// <summary>
+        /// Used to delete the shared link for this particular file.
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        public async Task<BoxFile> DeleteSharedLinkAsync(string id)
+        {
+            id.ThrowIfNullOrWhiteSpace("id");
+            
+            BoxRequest request = new BoxRequest(_config.FilesEndpointUri, id)
+                .Method(RequestMethod.Put)
+                .Payload(_converter.Serialize(new BoxDeleteSharedLinkRequest()));
 
             IBoxResponse<BoxFile> response = await ToResponseAsync<BoxFile>(request).ConfigureAwait(false);
 
@@ -288,6 +327,18 @@ namespace Box.V2.Managers
             }
 
             return response.ResponseObject;
+        }
+
+        /// <summary>
+        /// Gets a preview link (URI) for a file that is valid for 60 seconds
+        /// </summary>
+        /// <param name="id">Id of the file</param>
+        /// <returns></returns>
+        public async Task<Uri> GetPreviewLinkAsync(string id)
+        {
+            var fields = new List<string>() { "expiring_embed_link" };
+            var file = await GetInformationAsync(id, fields);
+            return file.ExpiringEmbedLink.Url;
         }
 
         /// <summary>
